@@ -12,9 +12,11 @@ import {
     PageAction,
     PageHeader,
     RowGroup,
+    SkeletonSnapshot,
     StatusBadge,
     timeAgo,
     type StatusVariant,
+    vSkeletonSource,
 } from "@intentic/extension-ui";
 import { computed, onMounted, ref } from "vue";
 import { markAcceptanceSeen } from "./attention";
@@ -41,12 +43,12 @@ const {
     repos,
     unread,
     error: storiesError,
-    isLoading: storiesLoading,
+    isPending: storiesLoading,
     refresh: refreshStories,
     save,
     remove,
 } = useStories();
-const { runs, browsers, verdicts, error: runsError, isLoading: runsLoading, start, retry, stop, useRunOutcomes } = useRuns();
+const { runs, browsers, verdicts, error: runsError, isPending: runsLoading, start, retry, stop, useRunOutcomes } = useRuns();
 
 // Newest run naming a target wins; a read of what's already on disk (run manifests), not a stored preference, so
 // nothing new is written here.
@@ -201,9 +203,8 @@ const statuses = computed<Readonly<Record<string, { readonly label: string; read
     return Object.fromEntries(found);
 });
 
-// Placeholder rows only; groups and headings come from workspace facts, not this query, and render at once.
-const skeletonBar = `rounded bg-content/10`;
-// Varied widths, so the block reads as text rather than a bar chart.
+// Placeholder rows only; groups and headings come from workspace facts, not this query, and render at once. Varied
+// widths, so the block reads as text rather than a bar chart.
 const skeletonTitles = [`w-56`, `w-72`, `w-44`];
 
 // A run's headline: verdicts once known, live progress until then, never a percentage (a run can't turn "1 failed" into
@@ -343,55 +344,71 @@ const run = async (model: PickedModel): Promise<void> =>
                         </span>
                     </template>
 
-                    <!-- `py-2.5` and `h-5` match StoryRow's own geometry, so real rows land exactly where the placeholders were. -->
-                    <template v-if="storiesLoading">
-                        <div v-for="row in 3" :key="row" class="flex w-full items-center gap-3 px-4 py-2.5">
-                            <span :class="[skeletonBar, `h-4 w-4 shrink-0`]" />
-                            <span :class="[skeletonBar, `h-3.5 w-3.5 shrink-0`]" />
-                            <span class="flex h-5 min-w-0 flex-1 items-center">
-                                <span :class="[skeletonBar, `block h-3`, skeletonTitles[row - 1]]" />
-                            </span>
-                            <span :class="[skeletonBar, `h-2.5 w-14 shrink-0`]" />
+                    <!-- The repository's stories as they last looked here, per repository since each holds its own; hand-drawn rows
+                         until they have been seen once. `py-2.5` and `h-5` match StoryRow's own geometry, so real rows land exactly
+                         where the placeholders were. -->
+                    <SkeletonSnapshot v-if="storiesLoading" :of="`acceptance.stories:${entry.repo}`" label="Reading the stories">
+                        <!-- Divided here, since the group's own hairlines stop at this wrapper. -->
+                        <div class="divide-y divide-line-subtle" role="status" aria-busy="true" aria-label="Reading the stories">
+                            <div v-for="row in 3" :key="row" class="flex w-full items-center gap-3 px-4 py-2.5">
+                                <span class="skeleton h-4 w-4 shrink-0" />
+                                <span class="skeleton h-3.5 w-3.5 shrink-0" />
+                                <span class="flex h-5 min-w-0 flex-1 items-center">
+                                    <span class="skeleton block h-3" :class="skeletonTitles[row - 1]" />
+                                </span>
+                                <span class="skeleton h-2.5 w-14 shrink-0" />
+                            </div>
+                            <!-- The composer's row, which waits with the list: its clash check needs the paths the list is still reading. -->
+                            <div class="px-4 py-2.5">
+                                <div class="flex min-h-11 items-center gap-3">
+                                    <span class="skeleton h-3.5 w-3.5 shrink-0" />
+                                    <span class="skeleton block h-3 w-72 max-w-full" />
+                                </div>
+                            </div>
                         </div>
-                    </template>
-                    <template v-for="section in entry.groups" :key="section.group || 'root'">
-                        <!-- A group tick runs all stories in that group. -->
-                        <div v-if="section.group !== ``" class="group flex items-center gap-3 bg-canvas px-4 py-1">
-                            <Checkbox
-                                :model-value="section.paths.every((path) => selected.has(path))"
-                                :indeterminate="
-                                    section.paths.some((path) => selected.has(path)) && !section.paths.every((path) => selected.has(path))
-                                "
-                                binary
-                                size="small"
-                                class="ui-checkbox-quiet"
-                                :aria-label="`Run every story in ${section.group}`"
-                                @update:model-value="setSelected(section.paths, $event === true)"
+                    </SkeletonSnapshot>
+                    <!-- One element for the repository's whole list, composers included, so an empty repository imprints too;
+                         divided here, since the group's own hairlines stop at this wrapper. -->
+                    <div v-else v-skeleton-source="`acceptance.stories:${entry.repo}`" class="divide-y divide-line-subtle">
+                        <template v-for="section in entry.groups" :key="section.group || 'root'">
+                            <!-- A group tick runs all stories in that group. -->
+                            <div v-if="section.group !== ``" class="group flex items-center gap-3 bg-canvas px-4 py-1">
+                                <Checkbox
+                                    :model-value="section.paths.every((path) => selected.has(path))"
+                                    :indeterminate="
+                                        section.paths.some((path) => selected.has(path)) && !section.paths.every((path) => selected.has(path))
+                                    "
+                                    binary
+                                    size="small"
+                                    class="ui-checkbox-quiet"
+                                    :aria-label="`Run every story in ${section.group}`"
+                                    @update:model-value="setSelected(section.paths, $event === true)"
+                                />
+                                <!-- Group headings remain visible between their story rows. -->
+                                <span class="min-w-0 flex-1 truncate font-mono text-2xs text-muted">{{ section.group }}/</span>
+                                <TargetChip :repo="entry.repo" :group="section.group" :targets="targets" />
+                            </div>
+                            <StoryRow
+                                v-for="story in section.entries"
+                                :key="story.path"
+                                :story="story"
+                                :content="contents[story.path]"
+                                :expanded="editing === story.path"
+                                :status="statuses[story.path]"
+                                :autofocus="created === story.path"
+                                :selected="selected.has(story.path)"
+                                :save="save"
+                                :remove="remove"
+                                @toggle="toggle(story.path)"
+                                @select="setSelected([story.path], $event)"
+                                @run="selected = new Set([story.path])"
                             />
-                            <!-- Group headings remain visible between their story rows. -->
-                            <span class="min-w-0 flex-1 truncate font-mono text-2xs text-muted">{{ section.group }}/</span>
-                            <TargetChip :repo="entry.repo" :group="section.group" :targets="targets" />
-                        </div>
-                        <StoryRow
-                            v-for="story in section.entries"
-                            :key="story.path"
-                            :story="story"
-                            :content="contents[story.path]"
-                            :expanded="editing === story.path"
-                            :status="statuses[story.path]"
-                            :autofocus="created === story.path"
-                            :selected="selected.has(story.path)"
-                            :save="save"
-                            :remove="remove"
-                            @toggle="toggle(story.path)"
-                            @select="setSelected([story.path], $event)"
-                            @run="selected = new Set([story.path])"
-                        />
-                        <!-- One composer per group, so the next story lands beside the ones it belongs with. -->
-                        <StoryComposer :repo="entry.repo" :group="section.group" :taken="paths" @create="create" />
-                    </template>
-                    <!-- Render the top-level composer only when no group owns the story. -->
-                    <StoryComposer v-if="!entry.rooted" :repo="entry.repo" group="" :taken="paths" @create="create" />
+                            <!-- One composer per group, so the next story lands beside the ones it belongs with. -->
+                            <StoryComposer :repo="entry.repo" :group="section.group" :taken="paths" @create="create" />
+                        </template>
+                        <!-- Render the top-level composer only when no group owns the story. -->
+                        <StoryComposer v-if="!entry.rooted" :repo="entry.repo" group="" :taken="paths" @create="create" />
+                    </div>
                 </RowGroup>
                 <p v-if="unread > 0" class="text-2xs text-subtle">
                     {{ unread }} further story files are listed by filename only: titles, criteria and text are read for the first 200.
@@ -400,42 +417,49 @@ const run = async (model: PickedModel): Promise<void> =>
 
             <!-- Count withheld while the run list is unknown, not shown as a misleading zero. -->
             <RowGroup label="Runs" :count="runsLoading ? undefined : runs.length">
-                <template v-if="runsLoading">
-                    <div v-for="row in 2" :key="row" class="flex w-full items-center gap-3 px-4 py-2.5">
-                        <span :class="[skeletonBar, `h-3.5 w-3.5 shrink-0`]" />
-                        <!-- The two line boxes a run row stacks: text-sm over text-2xs. -->
-                        <span class="min-w-0 flex-1">
-                            <span class="flex h-5 items-center"><span :class="[skeletonBar, `block h-3 w-24`]" /></span>
-                            <span class="flex h-4 items-center"><span :class="[skeletonBar, `block h-2.5 w-40`]" /></span>
-                        </span>
-                        <span :class="[skeletonBar, `h-4 w-16 shrink-0 rounded-full`]" />
-                        <span :class="[skeletonBar, `h-2.5 w-20 shrink-0`]" />
+                <!-- The run list (or its empty note) as it last looked here; hand-drawn rows until it has been seen once. -->
+                <SkeletonSnapshot v-if="runsLoading" of="acceptance.runs" label="Reading the runs">
+                    <div class="divide-y divide-line-subtle" role="status" aria-busy="true" aria-label="Reading the runs">
+                        <div v-for="row in 2" :key="row" class="flex w-full items-center gap-3 px-4 py-2.5">
+                            <span class="skeleton h-3.5 w-3.5 shrink-0" />
+                            <!-- The two line boxes a run row stacks: text-sm over text-2xs. -->
+                            <span class="min-w-0 flex-1">
+                                <span class="flex h-5 items-center"><span class="skeleton block h-3 w-24" /></span>
+                                <span class="flex h-4 items-center"><span class="skeleton block h-2.5 w-40" /></span>
+                            </span>
+                            <span class="skeleton h-4 w-16 shrink-0 rounded-full" />
+                            <span class="skeleton h-2.5 w-20 shrink-0" />
+                        </div>
                     </div>
-                </template>
-                <div v-else-if="runs.length === 0" :class="ui.emptyState('m-3')">
+                </SkeletonSnapshot>
+                <div v-else-if="runs.length === 0" v-skeleton-source="`acceptance.runs`" :class="ui.emptyState('m-3')">
                     Nothing has been tested yet. Press Run below: reports land in
                     <span class="font-mono">{{ RUNS_DIR }}/</span>, outside every repository.
                 </div>
-                <button
-                    v-for="entry in runRows"
-                    :key="entry.row.manifest.runId"
-                    type="button"
-                    class="group flex w-full cursor-pointer items-center gap-3 px-4 py-2.5 text-left hover:bg-overlay"
-                    @click="openRunId = entry.row.manifest.runId"
-                >
-                    <Icon :name="entry.row.running ? `spinner` : `history`" :spin="entry.row.running" class="shrink-0 text-subtle" />
-                    <span class="min-w-0 flex-1">
-                        <!-- Titles, not a count: "3 stories" makes every run look alike; titles are how you find the one you remember. -->
-                        <span class="block truncate text-sm text-content/80 group-hover:text-content">
-                            {{ entry.row.manifest.stories.map((story) => story.title).join(` · `) }}
+                <!-- One element for every run, so the imprint is the whole list; divided here, since the group's own hairlines
+                     stop at this wrapper. -->
+                <div v-else v-skeleton-source="`acceptance.runs`" class="divide-y divide-line-subtle">
+                    <button
+                        v-for="entry in runRows"
+                        :key="entry.row.manifest.runId"
+                        type="button"
+                        class="group flex w-full cursor-pointer items-center gap-3 px-4 py-2.5 text-left hover:bg-overlay"
+                        @click="openRunId = entry.row.manifest.runId"
+                    >
+                        <Icon :name="entry.row.running ? `spinner` : `history`" :spin="entry.row.running" class="shrink-0 text-subtle" />
+                        <span class="min-w-0 flex-1">
+                            <!-- Titles, not a count: "3 stories" makes every run look alike; titles are how you find the one you remember. -->
+                            <span class="block truncate text-sm text-content/80 group-hover:text-content">
+                                {{ entry.row.manifest.stories.map((story) => story.title).join(` · `) }}
+                            </span>
+                            <span class="block truncate font-mono text-2xs text-subtle">
+                                {{ reposOf(entry.row.manifest).join(`, `) }} · {{ entry.row.manifest.pick.agent }} {{ entry.row.manifest.pick.model }}
+                            </span>
                         </span>
-                        <span class="block truncate font-mono text-2xs text-subtle">
-                            {{ reposOf(entry.row.manifest).join(`, `) }} · {{ entry.row.manifest.pick.agent }} {{ entry.row.manifest.pick.model }}
-                        </span>
-                    </span>
-                    <StatusBadge v-if="entry.status" :variant="entry.status.variant" :label="entry.status.label" size="xs" />
-                    <span class="w-20 shrink-0 text-right text-2xs text-subtle">{{ timeAgo(entry.row.manifest.createdAt) }}</span>
-                </button>
+                        <StatusBadge v-if="entry.status" :variant="entry.status.variant" :label="entry.status.label" size="xs" />
+                        <span class="w-20 shrink-0 text-right text-2xs text-subtle">{{ timeAgo(entry.row.manifest.createdAt) }}</span>
+                    </button>
+                </div>
             </RowGroup>
             <p v-if="runs.length > SCAN_RUNS" class="mt-2 text-2xs text-subtle">
                 Verdicts are read for the newest {{ SCAN_RUNS }} runs. Older ones show theirs when opened.

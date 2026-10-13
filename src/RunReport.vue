@@ -10,9 +10,11 @@ import {
     Markdown,
     Notice,
     noticeOf,
+    SkeletonSnapshot,
     StatusBadge,
     timeAgo,
     type StatusVariant,
+    vSkeletonSource,
 } from "@intentic/extension-ui";
 import { computed, onBeforeUnmount, reactive, ref, watch } from "vue";
 import { host } from "./host";
@@ -68,6 +70,9 @@ const unstartedFailureOf = (slug: string): string | undefined =>
 // Why a story was never walked: the session's own last words, kept only while its card still reads as failed; without
 // this a refused session showed only a grey "error" with no reason reachable anywhere.
 const failureOf = (slug: string): string | undefined => agentOf(slug)?.failure ?? unstartedFailureOf(slug);
+
+// Per run and story, since each report is its own length: what an open story stands in as while the run's files are read.
+const imprintOf = (slug: string): string => `acceptance.report:${run.manifest.runId}/${slug}`;
 
 // This row's badge, sharing runs.ts's standing logic plus two report-only answers (still reading artifacts, or no
 // session on the roster), so this view and the stories list never disagree.
@@ -292,51 +297,71 @@ const addresses = computed(() => Object.entries(run.manifest.targets).map(([key,
                 </template>
 
                 <template #below>
-                    <!-- The report is the artifact; everything else on this row summarizes it. -->
-                    <!-- Report prose stays within the shared reading width. -->
-                    <div v-if="outcomes[story.slug]?.report" :ref="(el) => (reportEl[story.slug] = el as HTMLElement)" style="--prose-measure: 68ch">
-                        <Markdown :source="outcomes[story.slug]?.report ?? ``" :decorate="restrictReportImages" />
-                    </div>
-<!-- The one thing to read when a session died without a report: the provider's own failure sentence, instead of an otherwise-empty transcript. -->
-                    <Notice
-                        v-else-if="outcomes[story.slug]?.invalidResult"
-                        :of="
-                            noticeOf(
-                                `The session wrote a result that did not match this run's story and acceptance criteria. Open the session to correct it.`,
-                            )
-                        "
-                    />
-                    <!-- For the compiler: `failureOf` is a call, so the v-else-if guard above can't narrow it. -->
-                    <Notice v-else-if="failureOf(story.slug)" :of="noticeOf(failureOf(story.slug) ?? ``)" />
-                    <div v-else :class="ui.emptyState()">
-                        {{
-                            verdictBadge(story.slug).variant === `info`
-                                ? `Still testing: the report is written at the end of the walkthrough.`
-                                : `No report was written. Open the session to see how far it got.`
-                        }}
-                    </div>
-
-                    <!-- Criteria appear in authored order with one verdict each. -->
-                    <!-- The verdict matrix uses full reading size and contrast. -->
-                    <ul v-if="(outcomes[story.slug]?.result?.criteria ?? []).length > 0" class="mt-4 flex max-w-read flex-col gap-1.5">
-                        <li
-                            v-for="(criterion, index) in outcomes[story.slug]?.result?.criteria ?? []"
-                            :key="index"
-                            class="flex items-start gap-2 text-sm leading-relaxed"
+                    <!-- Read from the run's files, not known yet: the drawer as it last looked here, hand-drawn report lines until it
+                         has been seen once, rather than "No report was written", which would be a wrong answer, not a pending one. -->
+                    <SkeletonSnapshot v-if="loading" :of="imprintOf(story.slug)" label="Reading the report">
+                        <div class="flex max-w-read flex-col gap-2 py-2" role="status" aria-busy="true" aria-label="Reading the report">
+                            <span class="skeleton block h-3 w-full" />
+                            <span class="skeleton block h-3 w-11/12" />
+                            <span class="skeleton block h-3 w-3/4" />
+                            <span class="skeleton mt-4 block h-3 w-64 max-w-full" />
+                            <span class="skeleton block h-3 w-56 max-w-full" />
+                        </div>
+                    </SkeletonSnapshot>
+                    <!-- One element for the whole drawer, report or note and the criteria under it, so its imprint is all of it. -->
+                    <div v-else v-skeleton-source="imprintOf(story.slug)">
+                        <!-- The report is the artifact; everything else on this row summarizes it. -->
+                        <!-- Report prose stays within the shared reading width. -->
+                        <div
+                            v-if="outcomes[story.slug]?.report"
+                            :ref="(el) => (reportEl[story.slug] = el as HTMLElement)"
+                            style="--prose-measure: 68ch"
                         >
-                            <Icon
-                                :name="criterion.verdict === `pass` ? `check-circle` : criterion.verdict === `fail` ? `exclamation-circle` : `circle`"
-                                :class="[
-                                    'mt-1 shrink-0',
-                                    criterion.verdict === `pass` ? `text-success` : criterion.verdict === `fail` ? `text-danger` : `text-subtle`,
-                                ]"
-                            />
-                            <span class="min-w-0 flex-1 text-content">
-                                {{ criterion.text }}
-                                <span v-if="criterion.note" class="text-subtle">: {{ criterion.note }}</span>
-                            </span>
-                        </li>
-                    </ul>
+                            <Markdown :source="outcomes[story.slug]?.report ?? ``" :decorate="restrictReportImages" />
+                        </div>
+                        <!-- The one thing to read when a session died without a report: the provider's own failure sentence, instead of an otherwise-empty transcript. -->
+                        <Notice
+                            v-else-if="outcomes[story.slug]?.invalidResult"
+                            :of="
+                                noticeOf(
+                                    `The session wrote a result that did not match this run's story and acceptance criteria. Open the session to correct it.`,
+                                )
+                            "
+                        />
+                        <!-- For the compiler: `failureOf` is a call, so the v-else-if guard above can't narrow it. -->
+                        <Notice v-else-if="failureOf(story.slug)" :of="noticeOf(failureOf(story.slug) ?? ``)" />
+                        <div v-else :class="ui.emptyState()">
+                            {{
+                                verdictBadge(story.slug).variant === `info`
+                                    ? `Still testing: the report is written at the end of the walkthrough.`
+                                    : `No report was written. Open the session to see how far it got.`
+                            }}
+                        </div>
+
+                        <!-- Criteria appear in authored order with one verdict each. -->
+                        <!-- The verdict matrix uses full reading size and contrast. -->
+                        <ul v-if="(outcomes[story.slug]?.result?.criteria ?? []).length > 0" class="mt-4 flex max-w-read flex-col gap-1.5">
+                            <li
+                                v-for="(criterion, index) in outcomes[story.slug]?.result?.criteria ?? []"
+                                :key="index"
+                                class="flex items-start gap-2 text-sm leading-relaxed"
+                            >
+                                <Icon
+                                    :name="
+                                        criterion.verdict === `pass` ? `check-circle` : criterion.verdict === `fail` ? `exclamation-circle` : `circle`
+                                    "
+                                    :class="[
+                                        'mt-1 shrink-0',
+                                        criterion.verdict === `pass` ? `text-success` : criterion.verdict === `fail` ? `text-danger` : `text-subtle`,
+                                    ]"
+                                />
+                                <span class="min-w-0 flex-1 text-content">
+                                    {{ criterion.text }}
+                                    <span v-if="criterion.note" class="text-subtle">: {{ criterion.note }}</span>
+                                </span>
+                            </li>
+                        </ul>
+                    </div>
                 </template>
             </DisclosureRow>
         </div>

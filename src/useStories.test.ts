@@ -59,7 +59,7 @@ const file = (path: string, content: string) =>
         WorkspaceFileSchema.parse({ present: true, path, content, size: content.length, offset: 0, bytes: content.length, shared: true }),
     ] as const;
 
-// Runs the composable inside an app context and effect scope, like the view does; waits for `isLoading` to go false
+// Runs the composable inside an app context and effect scope, like the view does; waits for `isPending` to go false
 // rather than a fixed tick count.
 const run = async (api: IntenticApi): Promise<ReturnType<typeof useStories>> => {
     bindHost(api);
@@ -71,11 +71,11 @@ const run = async (api: IntenticApi): Promise<ReturnType<typeof useStories>> => 
         throw new Error(`the composable returned nothing`);
     }
     scopes.push(scope);
-    for (let tick = 0; tick < 100 && result.isLoading.value; tick += 1) {
+    for (let tick = 0; tick < 100 && result.isPending.value; tick += 1) {
         await nextTick();
         await new Promise((resolve) => setTimeout(resolve, 0));
     }
-    expect(result.isLoading.value, `the query never settled`).toBe(false);
+    expect(result.isPending.value, `the query never settled`).toBe(false);
     return result;
 };
 

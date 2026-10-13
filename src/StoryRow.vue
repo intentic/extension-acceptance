@@ -1,6 +1,18 @@
 <script setup lang="ts">
 import { errorMessage } from "@intentic/base/errors";
-import { Button, Checkbox, DisclosureRow, Icon, MarkdownDocument, Notice, noticeOf, StatusBadge, type StatusVariant } from "@intentic/extension-ui";
+import {
+    Button,
+    Checkbox,
+    DisclosureRow,
+    Icon,
+    MarkdownDocument,
+    Notice,
+    noticeOf,
+    SkeletonSnapshot,
+    StatusBadge,
+    type StatusVariant,
+    vSkeletonSource,
+} from "@intentic/extension-ui";
 import { computed, onBeforeUnmount, ref, watch } from "vue";
 import { criteriaOf, type Story } from "./stories";
 
@@ -45,6 +57,9 @@ const loaded = ref(false);
 const saving = ref(false);
 const failure = ref<string | undefined>(undefined);
 const confirmRemove = ref(false);
+// Per story, since each file is its own length: what the document stands in as while its text is on the way.
+const imprint = computed(() => `acceptance.story:${story.path}`);
+const fileName = computed(() => story.path.split(`/`).pop());
 
 // What the collapsed row counts and the run is graded against, over whichever copy of the file is currently the truth.
 const authored = computed<number>(() => criteriaOf(expanded ? draft.value : content).length);
@@ -139,31 +154,47 @@ onBeforeUnmount(() => (saving.value = false));
             <!-- Escape closes the row, which unmounts the document and triggers its own flush, so leaving never loses an edit. -->
             <div class="py-2 sm:px-2" @keydown.esc="emit(`toggle`)">
                 <div class="max-w-read px-2" style="--prose-measure: 68ch">
-                    <p v-if="!loaded" class="flex items-center gap-2 py-6 text-2xs text-subtle">
-                        <Icon name="spinner" spin class="text-xs" />
-                        Reading {{ story.path.split(`/`).pop() }}…
-                    </p>
-                    <MarkdownDocument
-                        v-else
-                        v-model="draft"
-                        editable
-                        save="auto"
-                        :stored="written"
-                        :saving="saving"
-                        :caret-at="caretAt"
-                        :label="story.path"
-                        :placeholder="HINT"
-                        class="min-h-64"
-                        @save="commit"
-                    >
-                        <template #note>
-                            <template v-if="authored === 0">
-                                With no <code>## Acceptance criteria</code>, the agent reads checkable claims out of your prose instead, which works,
-                                but then the report grades itself against its own reading rather than against what you promised.
+                    <!-- The document as it last looked here while its text is on the way, not a sentence in its place; a hand-drawn
+                         one (title, prose, the criteria) until it has been seen once. Sized to the document's own minimum height, so
+                         the drawer doesn't jump when the text lands. -->
+                    <SkeletonSnapshot v-if="!loaded" :of="imprint" :label="`Reading ${fileName}`">
+                        <div class="flex min-h-64 flex-col py-2" role="status" aria-busy="true" :aria-label="`Reading ${fileName}`">
+                            <span class="skeleton block h-5 w-72 max-w-full" />
+                            <span class="mt-4 flex flex-col gap-2">
+                                <span class="skeleton block h-3 w-full" />
+                                <span class="skeleton block h-3 w-11/12" />
+                                <span class="skeleton block h-3 w-2/3" />
+                            </span>
+                            <span class="skeleton mt-6 block h-4 w-44" />
+                            <span class="mt-3 flex flex-col gap-2">
+                                <span class="skeleton block h-3 w-80 max-w-full" />
+                                <span class="skeleton block h-3 w-64 max-w-full" />
+                            </span>
+                        </div>
+                    </SkeletonSnapshot>
+                    <!-- Wrapped: the imprint is taken of an element of this view's own, not through the kit component's root. -->
+                    <div v-else v-skeleton-source="imprint">
+                        <MarkdownDocument
+                            v-model="draft"
+                            editable
+                            save="auto"
+                            :stored="written"
+                            :saving="saving"
+                            :caret-at="caretAt"
+                            :label="story.path"
+                            :placeholder="HINT"
+                            class="min-h-64"
+                            @save="commit"
+                        >
+                            <template #note>
+                                <template v-if="authored === 0">
+                                    With no <code>## Acceptance criteria</code>, the agent reads checkable claims out of your prose instead, which
+                                    works, but then the report grades itself against its own reading rather than against what you promised.
+                                </template>
+                                <template v-else>One verdict per criterion, in the order you wrote them. Enter opens the next one.</template>
                             </template>
-                            <template v-else>One verdict per criterion, in the order you wrote them. Enter opens the next one.</template>
-                        </template>
-                    </MarkdownDocument>
+                        </MarkdownDocument>
+                    </div>
 
                     <Notice v-if="failure" :of="noticeOf(failure)" class="mt-4" />
                 </div>

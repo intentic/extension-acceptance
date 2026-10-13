@@ -340,7 +340,9 @@ export function useRuns() {
                 browsersQuery.error.value?.message ??
                 verdictsQuery.error.value?.message,
         ),
-        isLoading: runsQuery.isLoading,
+        // isPending, not isLoading: true even while `enabled` still gates the fetch on the sandbox handshake, so that window
+        // reads as loading rather than as "nothing has been tested yet".
+        isPending: runsQuery.isPending,
         refresh: async (): Promise<void> => {
             await queryClient.invalidateQueries({ queryKey: runsKey.value });
         },

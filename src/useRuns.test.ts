@@ -92,11 +92,11 @@ const run = async (api: IntenticApi): Promise<ReturnType<typeof useRuns>> => {
         throw new Error(`the composable returned nothing`);
     }
     scopes.push(scope);
-    for (let tick = 0; tick < 100 && result.isLoading.value; tick += 1) {
+    for (let tick = 0; tick < 100 && result.isPending.value; tick += 1) {
         await nextTick();
         await new Promise((resolve) => setTimeout(resolve, 0));
     }
-    expect(result.isLoading.value, `the query never settled`).toBe(false);
+    expect(result.isPending.value, `the query never settled`).toBe(false);
     return result;
 };
 

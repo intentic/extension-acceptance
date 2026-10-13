@@ -104,7 +104,9 @@ export function useStories() {
         notes: computed<Readonly<Record<string, string>>>(() => query.data.value?.notes ?? {}),
         unread: computed<number>(() => query.data.value?.unread ?? 0),
         error: computed(() => query.error.value?.message),
-        isLoading: query.isLoading,
+        // isPending, not isLoading: true even while `enabled` still gates the fetch on the sandbox handshake, so that window
+        // reads as loading rather than as repositories with no stories.
+        isPending: query.isPending,
         refresh: invalidate,
         save,
         remove,
