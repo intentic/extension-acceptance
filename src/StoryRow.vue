@@ -152,7 +152,7 @@ onBeforeUnmount(() => (saving.value = false));
         <!-- Report details use the shared measured column, not row padding. -->
         <template #below>
             <!-- Escape closes the row, which unmounts the document and triggers its own flush, so leaving never loses an edit. -->
-            <div class="py-2 sm:px-2" @keydown.esc="emit(`toggle`)">
+            <div class="pt-2 sm:px-2" @keydown.esc="emit(`toggle`)">
                 <div class="max-w-read px-2" style="--prose-measure: 68ch">
                     <!-- The document as it last looked here while its text is on the way, not a sentence in its place; a hand-drawn
                          one (title, prose, the criteria) until it has been seen once. Sized to the document's own minimum height, so
@@ -200,7 +200,7 @@ onBeforeUnmount(() => (saving.value = false));
                 </div>
 
                 <!-- Report actions stay inside the measured column. -->
-                <div class="mt-6 flex items-center justify-end gap-2 border-t border-line/60 pt-3">
+                <div class="mt-4 flex items-center justify-end gap-2 border-t border-line/60 pt-4">
                     <!-- Narrows the run to this story; not a second way to start one, the run pill still owns the gate and the label. -->
                     <Button label="Run only this" size="small" severity="secondary" @click="emit(`run`)">
                         <template #icon><Icon name="play" /></template>
