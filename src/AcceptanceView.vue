@@ -335,7 +335,7 @@ const run = async (model: PickedModel): Promise<void> =>
                     stories become testable.
                 </div>
                 <!-- Count withheld while loading: "0" beside a loading group is a wrong answer, not a pending one. -->
-                <RowGroup v-for="entry in byRepo" :key="entry.repo" :label="entry.repo" :count="storiesLoading ? undefined : entry.count">
+                <RowGroup v-for="entry in byRepo" :key="entry.repo" :label="entry.repo">
                     <!-- Each repository row owns its dev-server state and address. -->
                     <template #actions>
                         <span class="group flex items-center gap-2">
@@ -416,7 +416,7 @@ const run = async (model: PickedModel): Promise<void> =>
             </section>
 
             <!-- Count withheld while the run list is unknown, not shown as a misleading zero. -->
-            <RowGroup label="Runs" :count="runsLoading ? undefined : runs.length">
+            <RowGroup label="Runs">
                 <!-- The run list (or its empty note) as it last looked here; hand-drawn rows until it has been seen once. -->
                 <SkeletonSnapshot v-if="runsLoading" of="acceptance.runs" label="Reading the runs">
                     <div class="divide-y divide-line-subtle" role="status" aria-busy="true" aria-label="Reading the runs">
